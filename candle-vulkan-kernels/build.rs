@@ -224,12 +224,9 @@ fn compile_slang(
     defines: &[&str],
     extra_flags: &[&str],
 ) {
-    // `SLANGC` overrides the slangc executable (e.g. a specific installation
-    // or version); unset or empty falls back to `slangc` from the PATH.
-    let slangc = match std::env::var("SLANGC") {
-        Ok(value) if !value.is_empty() => value,
-        _ => format!("slangc{}", if cfg!(windows) { ".exe" } else { "" }),
-    };
+    // Use the slangc built from source by the shader-slang-dev crate, not a
+    // user-installed slangc from the PATH.
+    let slangc = shader_slang_dev::slangc();
     let mut args: Vec<String> = vec![
         source_path.to_string_lossy().into_owned(),
         "-o".to_string(),
