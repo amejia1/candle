@@ -2,10 +2,12 @@
 
 A container for building, testing, and debugging candle with the Vulkan
 backend. The container provides the full toolchain (Rust, Vulkan loader and
-Mesa Vulkan drivers, Slang shader compiler) plus the debugging and profiling
-tools for the Rust code, the Slang shaders, and the compiled SPIR-V, so the
-full test suite and the examples can run without any host-side Vulkan or
-Rust setup beyond `docker`.
+Mesa Vulkan drivers) plus the debugging and profiling tools for the Rust code
+and the compiled SPIR-V, so the full test suite and the examples can run
+without any host-side Vulkan or Rust setup beyond `docker`. The Slang shader
+compiler is not part of the image: `candle-vulkan-kernels` builds it from
+source as part of the cargo build, via its `shader-slang-dev` build
+dependency, so the image only needs the C/C++ toolchain, `cmake`, and `git`.
 
 All commands use the `docker` CLI; they work the same on hosts where the
 docker runtime is provided by Podman.
@@ -17,26 +19,36 @@ docker runtime is provided by Podman.
 | `vulkan.Dockerfile` | Builds the `candle-vulkan-dev` image from `ubuntu:latest` (multi-stage). |
 | `build-vulkan-dev.sh` | Builds the image. |
 | `run-vulkan-dev.sh` | Runs the image with GPU access and the usual mounts. |
-| `build-install-slang.sh` | Builds the shader-slang programs (static) from a fresh clone and installs them; used by the Dockerfile (into `/usr/local/bin`) and directly on the host (into `$HOME/.local/bin`). |
+| `vendor-vulkano-ash.sh` | Vendoring helper for the vulkano/ash path dependencies. |
 
 ## Image contents
 
 Base: `ubuntu:latest` (26.04 "resolute" at the time of writing). The image is
-built in two stages: a builder compiles Slang, vkpeak, and the Rust profiling
-tools from source, and only the resulting binaries are copied into the final
-image, so the toolchains and build trees do not bloat it.
+built in two stages: a builder compiles vkpeak and the Rust profiling tools
+from source, and only the resulting binaries are copied into the final image,
+so the toolchains and build trees do not bloat it.
 
 Build and run dependencies:
 
 | Package | Provides |
 | --- | --- |
-| `build-essential`, `cmake`, `pkg-config`, `git`, `curl`, `wget`, `ca-certificates`, `libncurses-dev`, `libxml2-dev`, `libx11-dev` | Core build tools. The `-dev` packages pull in the runtime libraries (`libncurses-dev` → `libtinfo6`, `libxml2-dev` → `libxml2-16` on 26.04), so the image does not depend on the exact versioned runtime package names. `libx11-dev` (pulling `libxcb1-dev`) is needed to link the workspace: vulkano, the Vulkan wrapper candle uses, depends on `x11rb`/`x11-dl` for window-system integration. |
+| `build-essential`, `cmake`, `pkg-config`, `git`, `curl`, `wget`, `ca-certificates`, `libncurses-dev`, `libxml2-dev`, `libx11-dev` | Core build tools. The `-dev` packages pull in the runtime libraries (`libncurses-dev` → `libtinfo6`, `libxml2-dev` → `libxml2-16` on 26.04), so the image does not depend on the exact versioned runtime package names. `libx11-dev` (pulling `libxcb1-dev`) is needed to link the workspace: vulkano, the Vulkan wrapper candle uses, depends on `x11rb`/`x11-dl` for window-system integration. `build-essential`, `cmake`, and `git` are also what the `shader-slang-dev` build dependency needs to compile the Slang shader compiler from source during the cargo build. |
 | `libvulkan-dev` | Vulkan loader (installs `libvulkan1`) and development headers. |
 | `vulkan-tools` | `vulkaninfo` and friends. |
 | `mesa-vulkan-drivers` | Mesa Vulkan ICD drivers: AMD (radv), Intel (ANV/HASVK), and the llvmpipe software driver. NVIDIA GPUs are not covered by these drivers. |
 | `vulkan-validationlayers` | Validation layers, including the printf layer used by the `test_vulkan_shader_printf` test. |
-| Slang (source build) | The Slang shader compiler (`/usr/local/bin/slangc`), used by `candle-vulkan-kernels/build.rs` to compile the `.slang` shaders to SPIR-V. Built by `build-install-slang.sh` from a fresh clone pinned by the `SLANG_VERSION` Dockerfile ARG (currently `v2026.21`), with `-DSLANG_LIB_TYPE=STATIC` so the installed programs are mostly self-contained (only system libraries remain as dynamic dependencies). Ubuntu's `slang-compiler` package (2026.1.1) is too old: the native FP8 kernels use the `FloatE4M3` type, which only exists in newer Slang versions. Bump `SLANG_VERSION` when the shaders require a newer Slang feature. |
-| Rust (rustup, stable) | Installed under `/usr/local/cargo` / `/usr/local/rustup`. |
+| Rust (rustup, pinned by the `RUST_VERSION` ARG, currently `1.99.1`) | Installed under `/usr/local/cargo` / `/usr/local/rustup`. Pinned to the host development machine's toolchain (instead of the floating current stable) so the container's lint behavior matches the host's: newer toolchains add lints that the workspace has not been cleaned up for, which would fail the zero-warnings battery gate. Bump `RUST_VERSION` in the Dockerfile when the host toolchain is updated. |
+
+The Slang shader compiler (`slangc`) is not installed in the image. It is
+built from source by the
+[`shader-slang-dev`](https://github.com/amejia1/shader-slang-dev) build
+dependency of `candle-vulkan-kernels`, whose build script is invoked by cargo
+on every build of the workspace (and which skips the compile when the
+artifacts already exist in the shared `target/` directory). The built
+`slangc` (and the runtime-loaded plugin libraries it needs) live under
+`target/.../build/shader-slang-src-*/out/`, and
+`candle-vulkan-kernels/build.rs` invokes that `slangc`, never one from the
+`PATH`.
 
 Debugging and profiling tools:
 
@@ -58,8 +70,10 @@ a compute-only backend.
 
 Note: LunarG's Ubuntu APT repository (`packages.lunarg.com/vulkan/ubuntu`)
 is no longer available (its URLs return 404), so the Vulkan toolchain comes
-from Ubuntu's own packages, the Slang compiler and vkpeak are built from
-source, and the Rust profiling tools are installed with `cargo install`.
+from Ubuntu's own packages, vkpeak is built from source, the Slang compiler
+is built from source as part of the cargo build (via the `shader-slang-dev`
+build dependency), and the Rust profiling tools are installed with
+`cargo install`.
 
 ## Build
 
@@ -119,9 +133,6 @@ docker run -it \
 ## Verification
 
 ```sh
-# Verify the Slang shader compiler:
-slangc -version
-
 # Verify Vulkan device bindings (the host's GPU should be listed):
 vulkaninfo --summary
 
@@ -174,7 +185,10 @@ CANDLE_VULKAN_TEST_GPU=1 .devops/run-vulkan-dev.sh -- \
 
 - The `target/` directory is shared with the host through the mount. The
   first build inside the container may recompile the workspace (different
-  toolchain path/glibc), later runs are incremental.
+  toolchain path/glibc), later runs are incremental. The Slang toolchain
+  built by the `shader-slang-dev` build dependency is also stored under
+  `target/`, so a build that already ran on the host (or in the container)
+  is reused and the compiler is not rebuilt.
 - The Mesa ICD drivers in the image cover AMD and Intel GPUs (and
   llvmpipe). A host with an NVIDIA GPU needs a different GPU passthrough
   configuration (for example the nvidia container runtime) instead of

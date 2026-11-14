@@ -21,11 +21,12 @@ compiling the test shaders in `shaders/test/`.
 
 ## Build-time environment variables
 
+The `slangc` used is the one built from source by the `shader-slang-dev`
+build dependency (never a `slangc` from the `PATH`).
+
 `build.rs` honors the following environment variables when invoking
 `slangc`:
 
-- `SLANGC`: path to the slangc executable to use (defaults to `slangc`
-  on the PATH).
 - `SLANGCFLAGS`: extra flags, space-separated, appended to every slangc
   invocation.
 - `CANDLE_VULKAN_SLANG_OPT`: override for the slangc optimization flag.

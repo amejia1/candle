@@ -70,15 +70,17 @@ cargo run --release --features vulkan --example quantized-qwen3 -- --prompt "Hel
 
 ### System dependencies
 
-Building with the `vulkan` feature requires the Slang shader compiler
-(`slangc`) and a few system libraries. On Ubuntu, install:
+Building with the `vulkan` feature requires a C/C++ toolchain (to build the
+Slang shader compiler from source) and a few system libraries. On Ubuntu,
+install:
 
 ```sh
 sudo apt install build-essential cmake pkg-config git libvulkan-dev libx11-dev
 ```
 
 - `build-essential`, `cmake`, `pkg-config`, `git` — a C/C++ toolchain and
-  build tools, needed to build `slangc` and to link the native dependencies.
+  build tools, needed to build the Slang shader compiler (see below) and to
+  link the native dependencies.
 - `libvulkan-dev` — the Vulkan loader (`libvulkan1`) and development headers.
 - `libx11-dev` — pulls in `libxcb1-dev`, needed to link the X11 window-system
   bindings that the `vulkano` wrapper depends on.
@@ -97,22 +99,16 @@ available devices:
 sudo apt install vulkan-tools
 ```
 
-### Installing the Slang shader compiler
+### The Slang shader compiler
 
 `candle-vulkan-kernels` compiles its `.slang` shaders to SPIR-V at build time
-using `slangc`. Ubuntu's `slang-compiler` package is too old for the candle
-shaders, so install a recent `slangc` from source using the
-`build-install-slang.sh` script in this repository:
-
-```sh
-.devops/build-install-slang.sh
-```
-
-This clones a pinned release of
-[shader-slang](https://github.com/shader-slang/slang), builds it, and installs
-`slangc` (and friends) into `$HOME/.local/bin` (override with `--install-dir`).
-Make sure `$HOME/.local/bin` is on your `PATH`. The script needs `git`, `cmake`,
-and a C/C++ toolchain (installed above).
+using `slangc`. There is nothing to install: the Slang compiler is built from
+source automatically as part of the cargo build, by the
+[`shader-slang-dev`](https://github.com/amejia1/shader-slang-dev) build
+dependency of `candle-vulkan-kernels` (Ubuntu's `slang-compiler` package is
+too old for the candle shaders: the native FP8 kernels use the `FloatE4M3`
+type, which only exists in newer Slang versions). The build needs `git`,
+`cmake`, and a C/C++ toolchain, installed above.
 
 ### Selecting the Vulkan device
 
@@ -432,8 +428,10 @@ work the same way.
 ### Development container
 
 A container with the full toolchain (Rust, the Vulkan loader and Mesa drivers,
-Slang, plus debugging and profiling tools) is provided under `.devops/`. Build
-it with:
+plus debugging and profiling tools) is provided under `.devops/`. The Slang
+shader compiler is not preinstalled in the image; it is built from source as
+part of the cargo build (via the `shader-slang-dev` build dependency). Build
+the image with:
 
 ```sh
 .devops/build-vulkan-dev.sh

@@ -12,15 +12,15 @@
 #   - mesa-vulkan-drivers:     Mesa Vulkan ICD drivers (AMD, Intel,
 #                              llvmpipe software; no NVIDIA)
 #   - vulkan-validationlayers: validation layers (incl. the printf layer)
-#   - Slang:                    the Slang shader compiler (slangc), built
-#                               from source (stage "builder"), used by
-#                               candle-vulkan-kernels/build.rs to compile
-#                               the .slang shaders to SPIR-V
 #
-# The image is multi-stage: a "builder" compiles Slang, vkpeak, and the
-# Rust profiling tools from source, and only the resulting binaries are
-# copied into the final image, so the toolchains and build trees do not
-# bloat it.
+# The Slang shader compiler (slangc) is not preinstalled: candle's
+# `candle-vulkan-kernels` crate builds it from source as part of the cargo
+# build, via its `shader-slang-dev` build dependency, so the image only
+# needs the C/C++ toolchain, cmake, and git.
+#
+# The image is multi-stage: a "builder" compiles vkpeak and the Rust
+# profiling tools from source, and only the resulting binaries are copied
+# into the final image, so the toolchains and build trees do not bloat it.
 #
 # Build with .devops/build-vulkan-dev.sh, run with .devops/run-vulkan-dev.sh.
 
@@ -32,8 +32,7 @@ FROM ubuntu:latest AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Build tools, Vulkan headers, and glslang (glslangValidator) for the
-# vkpeak/ncnn shader compilation, plus libx11-dev for Slang's SPIR-V/Vulkan
-# codegen path.
+# vkpeak/ncnn shader compilation.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -45,7 +44,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     libncurses-dev \
     libxml2-dev \
-    libx11-dev \
     libvulkan-dev \
     glslang-tools \
     && rm -rf /var/lib/apt/lists/*
@@ -59,19 +57,6 @@ RUN git clone --depth 1 --recurse-submodules --shallow-submodules \
     && cmake --build /tmp/vkpeak/build -j "$(nproc)" \
     && cp /tmp/vkpeak/build/vkpeak /usr/local/bin/vkpeak \
     && rm -rf /tmp/vkpeak
-
-# Slang shader compiler, built from source by build-install-slang.sh.
-# Ubuntu's slang-compiler package (2026.1.1) is too old for the candle
-# shaders: the native FP8 kernels use the FloatE4M3 type, which only exists
-# in newer Slang versions. The script clones a pinned release under $HOME,
-# builds it with SLANG_LIB_TYPE=STATIC (so the programs are mostly
-# self-contained), installs them under /usr/local/bin (and the dlopen-ed
-# downstream-compiler plugins under /usr/local/lib), and removes the source
-# and build trees (--clean). Bump SLANG_VERSION when the shaders require a
-# newer Slang feature.
-ARG SLANG_VERSION=v2026.21
-COPY build-install-slang.sh /tmp/build-install-slang.sh
-RUN sh /tmp/build-install-slang.sh --version "${SLANG_VERSION}" --install-dir /usr/local/bin --clean
 
 # Rust toolchain, used here only to compile the profiling/benchmark tools.
 ENV RUSTUP_HOME=/usr/local/rustup \
@@ -134,14 +119,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # 4. Rust toolchain (needed to build candle inside the container).
+# The rustup installer adds the current stable; the build then switches the
+# default to a pinned toolchain matching the host development machine, so
+# the container's lint behavior (and the zero-warnings battery gate)
+# matches the host's. Bump RUST_VERSION when the host toolchain is updated.
+ARG RUST_VERSION=1.99.1
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && rustup toolchain install "${RUST_VERSION}" --default \
+    && rustup toolchain uninstall stable
 
 # 5. Copy the source-built artifacts from the builder stage.
-COPY --from=builder /usr/local/bin/slang* /usr/local/bin/
-COPY --from=builder /usr/local/lib/libslang-*.so /usr/local/lib/
 COPY --from=builder /usr/local/bin/vkpeak /usr/local/bin/
 COPY --from=builder /usr/local/cargo-tools/bin/ /usr/local/bin/
 
