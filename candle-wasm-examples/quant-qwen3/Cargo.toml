@@ -26,10 +26,8 @@ num-traits = { workspace = true }
 candle-wasm-chat-template = { path = "../chat-template", version = "0.1.0" }
 
 # App crates.
-anyhow = { workspace = true }
 byteorder = { workspace = true }
 getrandom = { version = "0.3", features = ["wasm_js"], default-features = false }
-image = { workspace = true }
 log = { workspace = true }
 safetensors = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

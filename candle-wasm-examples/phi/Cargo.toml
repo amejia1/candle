@@ -8,6 +8,12 @@ keywords.workspace = true
 categories.workspace = true
 license.workspace = true
 
+[lints.cargo]
+# `getrandom` is a build-configuration dep: its `js` feature provides the
+# entropy source for `rand` on wasm32. The `cargo::unused_dependencies`
+# lint (cargo >= 1.100) does not see that, so allow it.
+unused_dependencies = "allow"
+
 [dependencies]
 candle = { workspace = true }
 candle-nn = { workspace = true }
@@ -16,10 +22,8 @@ tokenizers = { workspace = true, features = ["unstable_wasm"] }
 num-traits = { workspace = true }
 
 # App crates.
-anyhow = { workspace = true }
 byteorder = { workspace = true }
 getrandom = { version = "0.2", features = ["js"] }
-image = { workspace = true }
 log = { workspace = true }
 safetensors = { workspace = true }
 serde = { workspace = true }

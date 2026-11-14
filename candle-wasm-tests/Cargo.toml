@@ -6,6 +6,12 @@ description = "WASM tests for candle"
 keywords.workspace = true
 categories.workspace = true
 
+[lints.cargo]
+# `candle` is used by the wasm32-only integration tests, which the
+# `cargo::unused_dependencies` lint (cargo >= 1.100) does not count, so
+# allow it.
+unused_dependencies = "allow"
+
 [dependencies]
 candle = { workspace = true }
 rand = { workspace = true }
