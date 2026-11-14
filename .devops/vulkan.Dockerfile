@@ -123,7 +123,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # default to a pinned toolchain matching the host development machine, so
 # the container's lint behavior (and the zero-warnings battery gate)
 # matches the host's. Bump RUST_VERSION when the host toolchain is updated.
-ARG RUST_VERSION=1.99.1
+ARG RUST_VERSION=1.100.0
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH
